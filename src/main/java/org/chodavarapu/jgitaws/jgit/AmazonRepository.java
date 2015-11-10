@@ -32,7 +32,7 @@ public class AmazonRepository extends DfsRepository {
                 new S3WithDynamoMetaDataObjDatabase(
                         this,
                         builder.getReaderOptions(),
-                        new JGitAwsConfiguration(client));
+                        new JGitAwsConfiguration(client, null));
         refDatabase = new DynamoRefDatabase(this);
     }
 

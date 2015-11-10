@@ -2,27 +2,59 @@ package org.chodavarapu.jgitaws.repositories;
 
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.RequestClientOptions;
-import com.amazonaws.services.s3.model.BucketVersioningConfiguration;
-import com.amazonaws.services.s3.model.CreateBucketRequest;
-import com.amazonaws.services.s3.model.ObjectMetadata;
-import com.amazonaws.services.s3.model.SetBucketVersioningConfigurationRequest;
+import com.amazonaws.services.s3.model.*;
 import org.chodavarapu.jgitaws.JGitAwsConfiguration;
 import org.eclipse.jgit.internal.storage.dfs.DfsOutputStream;
+import org.eclipse.jgit.internal.storage.dfs.DfsPackDescription;
+import org.eclipse.jgit.internal.storage.pack.PackExt;
+import rx.Observable;
 import rx.schedulers.Schedulers;
 import rx.util.async.Async;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 
 /**
  * @author Ravi Chodavarapu (rchodava@gmail.com)
  */
 public class PackRepository {
-    private static final String PACKS_BUCKET_NAME = "jga.Packs";
     private final JGitAwsConfiguration configuration;
 
     public PackRepository(JGitAwsConfiguration configuration) {
         this.configuration = configuration;
+    }
+
+    private String objectName(String repositoryName, String packName) {
+        return new StringBuilder(repositoryName).append('/').append(packName).toString();
+    }
+
+    public Observable<Void> deletePacks(Collection<DfsPackDescription> packs) {
+        List<String> objectNames = getObjectNames(packs);
+
+        return Async.fromCallable(() -> configuration.getS3Client().deleteObjects(
+                new DeleteObjectsRequest(configuration.getPacksBucketName())
+                        .withKeys(objectNames.toArray(new String[objectNames.size()]))))
+                .map(r -> null);
+    }
+
+    private List<String> getObjectNames(Collection<DfsPackDescription> packs) {
+        List<String> objectNames = new ArrayList<>();
+        for (DfsPackDescription pack : packs) {
+            for (PackExt ext : PackExt.values()) {
+                if (pack.hasFileExt(ext)) {
+                    objectNames.add(objectName(
+                            pack.getRepositoryDescription().getRepositoryName(),
+                            pack.getFileName(ext)));
+                }
+            }
+        }
+
+        return objectNames;
     }
 
     public DfsOutputStream savePack(String repositoryName, String packName, long length) throws IOException {
@@ -33,18 +65,20 @@ public class PackRepository {
         metaData.setContentLength(length);
 
         Async.fromAction(() -> {
-            String objectName = new StringBuilder(repositoryName).append('/').append(packName).toString();
+            String objectName = objectName(repositoryName, packName);
             try {
-                configuration.getS3Client().putObject(PACKS_BUCKET_NAME, objectName, pipedInputStream, metaData);
+                configuration.getS3Client().putObject(
+                        configuration.getPacksBucketName(), objectName, pipedInputStream, metaData);
             } catch (AmazonServiceException e) {
                 if ("InvalidBucketName".equals(e.getErrorCode()) || "InvalidBucketState".equals(e.getErrorCode())) {
-                    configuration.getS3Client().createBucket(new CreateBucketRequest(PACKS_BUCKET_NAME));
+                    configuration.getS3Client().createBucket(new CreateBucketRequest(configuration.getPacksBucketName()));
                     configuration.getS3Client().setBucketVersioningConfiguration(
                             new SetBucketVersioningConfigurationRequest(
-                                    PACKS_BUCKET_NAME,
+                                    configuration.getPacksBucketName(),
                                     new BucketVersioningConfiguration(BucketVersioningConfiguration.OFF)));
 
-                    configuration.getS3Client().putObject(PACKS_BUCKET_NAME, objectName, pipedInputStream, metaData);
+                    configuration.getS3Client().putObject(
+                            configuration.getPacksBucketName(), objectName, pipedInputStream, metaData);
                 } else {
                     throw e;
                 }

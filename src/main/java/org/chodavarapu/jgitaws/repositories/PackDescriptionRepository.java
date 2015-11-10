@@ -12,9 +12,12 @@ import org.eclipse.jgit.internal.storage.dfs.DfsObjDatabase;
 import org.eclipse.jgit.internal.storage.dfs.DfsPackDescription;
 import org.eclipse.jgit.internal.storage.pack.PackExt;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import rx.Observable;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -22,6 +25,10 @@ import java.util.stream.Collectors;
  * @author Ravi Chodavarapu (rchodava@gmail.com)
  */
 public class PackDescriptionRepository {
+    private static final Logger logger = LoggerFactory.getLogger(PackDescriptionRepository.class);
+
+    private static final int MAXIMUM_OPERATIONS_PER_BATCH = 25;
+
     private static final String NAME_ATTRIBUTE = "Name";
     private static final String REPOSITORY_NAME_ATTRIBUTE = "RepositoryName";
     private static final String DESCRIPTION_ATTRIBUTE = "Description";
@@ -100,10 +107,59 @@ public class PackDescriptionRepository {
         return packName;
     }
 
+    private java.util.stream.Stream<DfsPackDescription> operationsOfType(
+            Collection<PackDescriptionOperation> operations,
+            Operation type) {
+        return operations.stream()
+                .filter(operation -> operation.getOperation() == type)
+                .map(operation -> operation.getDescription());
+    }
+
     public Observable<Void> updatePackDescriptions(
             Collection<DfsPackDescription> additions,
             Collection<DfsPackDescription> removals) {
-        Collection<Item> itemsToPut = additions.stream()
+
+        return (additions == null ? Observable.<DfsPackDescription>empty() : Observable.from(additions))
+                .map(addition -> new PackDescriptionOperation(addition, Operation.ADDITION))
+                .concatWith(
+                        (removals == null ? Observable.<DfsPackDescription>empty() : Observable.from(removals))
+                                .map(removal -> new PackDescriptionOperation(removal, Operation.REMOVAL)))
+                .window(MAXIMUM_OPERATIONS_PER_BATCH)
+                .flatMap(portions -> portions.toList())
+                .map(portion -> createBatchRequest(portion))
+                .flatMap(request -> configuration.getDynamoClient().updateItems(request, tableCreator))
+                .doOnCompleted(() -> logger.debug("Commit of packs to S3 complete!"));
+    }
+
+    private TableWriteItems createBatchRequest(List<PackDescriptionOperation> operations) {
+        List<Item> itemsToPut = createItemsToPutList(operations);
+        List<PrimaryKey> keysToDelete = createKeysToDeleteList(operations);
+
+        TableWriteItems request = new TableWriteItems(configuration.getPackDescriptionsTableName());
+
+        if (itemsToPut.size() > 0) {
+            request.withItemsToPut(itemsToPut);
+        }
+
+        if (keysToDelete.size() > 0) {
+            request.withPrimaryKeysToDelete(keysToDelete.toArray(new PrimaryKey[keysToDelete.size()]));
+        }
+
+        return request;
+    }
+
+    private List<PrimaryKey> createKeysToDeleteList(List<PackDescriptionOperation> portion) {
+        return operationsOfType(portion, Operation.REMOVAL)
+                .map(removal ->
+                        new PrimaryKey(
+                                new KeyAttribute(REPOSITORY_NAME_ATTRIBUTE,
+                                        removal.getRepositoryDescription().getRepositoryName()),
+                                new KeyAttribute(NAME_ATTRIBUTE, packName(removal))))
+                .collect(Collectors.toList());
+    }
+
+    private List<Item> createItemsToPutList(List<PackDescriptionOperation> portion) {
+        return operationsOfType(portion, Operation.ADDITION)
                 .map(addition ->
                         new Item()
                                 .withPrimaryKey(new PrimaryKey(
@@ -112,27 +168,6 @@ public class PackDescriptionRepository {
                                         new KeyAttribute(NAME_ATTRIBUTE, packName(addition))))
                                 .withString(DESCRIPTION_ATTRIBUTE, toJson(addition)))
                 .collect(Collectors.toList());
-
-        if (removals == null) {
-            return configuration.getDynamoClient().updateItems(
-                    new TableWriteItems(configuration.getPackDescriptionsTableName())
-                            .withItemsToPut(itemsToPut),
-                    tableCreator);
-        } else {
-            Collection<PrimaryKey> keysToDelete = removals.stream()
-                    .map(removal ->
-                            new PrimaryKey(
-                                    new KeyAttribute(REPOSITORY_NAME_ATTRIBUTE,
-                                            removal.getRepositoryDescription().getRepositoryName()),
-                                    new KeyAttribute(NAME_ATTRIBUTE, packName(removal))))
-                    .collect(Collectors.toList());
-
-            return configuration.getDynamoClient().updateItems(
-                    new TableWriteItems(configuration.getPackDescriptionsTableName())
-                            .withItemsToPut(itemsToPut)
-                            .withPrimaryKeysToDelete(keysToDelete.toArray(new PrimaryKey[itemsToPut.size()])),
-                    tableCreator);
-        }
     }
 
     public Observable<DfsPackDescription> getAllPackDescriptions(AmazonRepository repository) {
@@ -146,6 +181,31 @@ public class PackDescriptionRepository {
                     String description = item.getString(DESCRIPTION_ATTRIBUTE);
 
                     return fromJson(description, new DfsPackDescription(repository.getDescription(), name));
-                });
+                })
+                .doOnCompleted(() ->
+                        logger.debug("Retrieved packs list for repository {}", repository.getRepositoryName()));
+    }
+
+    private enum Operation {
+        ADDITION,
+        REMOVAL
+    }
+
+    private static class PackDescriptionOperation {
+        Operation operation;
+        DfsPackDescription description;
+
+        public PackDescriptionOperation(DfsPackDescription description, Operation operation) {
+            this.description = description;
+            this.operation = operation;
+        }
+
+        public Operation getOperation() {
+            return operation;
+        }
+
+        public DfsPackDescription getDescription() {
+            return description;
+        }
     }
 }

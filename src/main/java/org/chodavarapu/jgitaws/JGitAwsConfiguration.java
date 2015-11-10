@@ -14,6 +14,7 @@ public class JGitAwsConfiguration {
     public static final String DEFAULT_CONFIGURATIONS_TABLE_NAME = "jga.Configurations";
     public static final String DEFAULT_REFS_TABLE_NAME = "jga.Refs";
     public static final String DEFAULT_PACK_DESCRIPTIONS_TABLE_NAME = "jga.PackDescriptions";
+    private static final String DEFAULT_PACKS_BUCKET_NAME = "jga.Packs";
 
     private final DynamoClient dynamoClient;
     private final AmazonS3 s3Client;
@@ -24,6 +25,7 @@ public class JGitAwsConfiguration {
 
     private String configurationsTableName = DEFAULT_CONFIGURATIONS_TABLE_NAME;
     private String packDescriptionsTableName = DEFAULT_PACK_DESCRIPTIONS_TABLE_NAME;
+    private String packsBucketName = DEFAULT_PACKS_BUCKET_NAME;
     private String refsTableName = DEFAULT_REFS_TABLE_NAME;
 
     public JGitAwsConfiguration(DynamoClient dynamoClient, AmazonS3 s3Client) {
@@ -34,6 +36,14 @@ public class JGitAwsConfiguration {
         this.packRepository = new PackRepository(this);
         this.packDescriptionRepository = new PackDescriptionRepository(this);
         this.refRepository = new RefRepository(this);
+    }
+
+    public String getPacksBucketName() {
+        return packsBucketName;
+    }
+
+    public void setPacksBucketName(String packsBucketName) {
+        this.packsBucketName = packsBucketName;
     }
 
     public PackRepository getPackRepository() {
