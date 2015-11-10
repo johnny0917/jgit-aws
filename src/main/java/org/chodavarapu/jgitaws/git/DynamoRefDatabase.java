@@ -1,10 +1,11 @@
 package org.chodavarapu.jgitaws.git;
 
-import org.chodavarapu.jgitaws.repositories.GitRefRepository;
+import org.chodavarapu.jgitaws.repositories.RefRepository;
 import org.eclipse.jgit.internal.storage.dfs.DfsRefDatabase;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.util.RefList;
 
 import java.io.IOException;
 
@@ -12,7 +13,7 @@ import java.io.IOException;
  * @author Ravi Chodavarapu (rchodava@gmail.com)
  */
 public class DynamoRefDatabase extends DfsRefDatabase {
-    private GitRefRepository refRepository;
+    private RefRepository refRepository;
 
     public DynamoRefDatabase(AmazonRepository repository) {
         super(repository);
@@ -21,6 +22,8 @@ public class DynamoRefDatabase extends DfsRefDatabase {
     @Override
     protected boolean compareAndPut(Ref oldRef, Ref newRef) throws IOException {
         ObjectId id = newRef.getObjectId();
+
+        // TODO: Is the below RevWalk really necessary? Copying what's done in the InMemoryRepository
         if (id != null) {
             try (RevWalk rw = new RevWalk(getRepository())) {
                 rw.parseAny(id);
@@ -31,10 +34,8 @@ public class DynamoRefDatabase extends DfsRefDatabase {
 
         if (oldRef == null) {
             refRepository.addRefIfAbsent(
-                    getRepository().getRepositoryPath(),
-                    newRef.getName(),
-                    newRef.getTarget().getObjectId().name(),
-                    newRef.isSymbolic());
+                    getRepository().getRepositoryName(),
+                    newRef);
             return true;
         }
 
@@ -53,6 +54,22 @@ public class DynamoRefDatabase extends DfsRefDatabase {
 
     @Override
     protected RefCache scanAllRefs() throws IOException {
-        return null;
+        return refRepository.getAllRefsSorted(getRepository().getRepositoryName())
+                .toList()
+                .map(refs -> {
+                    RefList.Builder<Ref> allRefs = new RefList.Builder<>();
+                    RefList.Builder<Ref> onlySymbolicRefs = new RefList.Builder<>();
+
+                    for (Ref ref : refs) {
+                        allRefs.add(ref);
+
+                        if (ref.isSymbolic())
+                            onlySymbolicRefs.add(ref);
+                    }
+
+                    return new RefCache(allRefs.toRefList(), onlySymbolicRefs.toRefList());
+                })
+                .toBlocking()
+                .lastOrDefault(new RefCache(RefList.emptyList(), RefList.emptyList()));
     }
 }

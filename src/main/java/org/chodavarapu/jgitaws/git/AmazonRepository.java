@@ -1,8 +1,17 @@
 package org.chodavarapu.jgitaws.git;
 
+import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
+import org.chodavarapu.jgitaws.JGitAwsConfiguration;
+import org.chodavarapu.jgitaws.aws.DynamoClient;
 import org.eclipse.jgit.internal.JGitText;
-import org.eclipse.jgit.internal.storage.dfs.*;
-import org.eclipse.jgit.lib.*;
+import org.eclipse.jgit.internal.storage.dfs.DfsObjDatabase;
+import org.eclipse.jgit.internal.storage.dfs.DfsRefDatabase;
+import org.eclipse.jgit.internal.storage.dfs.DfsRepository;
+import org.eclipse.jgit.internal.storage.dfs.DfsRepositoryBuilder;
+import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.RefUpdate;
+import org.eclipse.jgit.lib.ReflogReader;
+import org.eclipse.jgit.lib.StoredConfig;
 
 import java.io.IOException;
 import java.text.MessageFormat;
@@ -11,43 +20,23 @@ import java.text.MessageFormat;
  * @author Ravi Chodavarapu (rchodava@gmail.com)
  */
 public class AmazonRepository extends DfsRepository {
-    public static class Builder
-            extends DfsRepositoryBuilder {
-        private String repositoryPath;
-
-        public String getRepositoryPath() {
-            return repositoryPath;
-        }
-
-        public Builder setRepositoryPath(String repositoryPath) {
-            this.repositoryPath = repositoryPath;
-            return this;
-        }
-
-        @Override
-        public Builder setup() throws IllegalArgumentException, IOException {
-            return this;
-        }
-
-        @Override
-        public AmazonRepository build() throws IOException {
-            return new AmazonRepository(setup());
-        }
-    }
-
     private final StoredConfig config;
     private final DfsObjDatabase objectDatabase;
     private final DfsRefDatabase refDatabase;
-
     private AmazonRepository(Builder builder) {
         super(builder);
 
-        config = new DynamoConfig(null, "");
-        objectDatabase = new S3ObjectDatabase(this, builder.getReaderOptions());
+        DynamoClient client = new DynamoClient((AmazonDynamoDB) null);
+        config = new DynamoStoredConfig(null, getRepositoryName());
+        objectDatabase =
+                new S3WithDynamoMetaDataObjDatabase(
+                        this,
+                        builder.getReaderOptions(),
+                        new JGitAwsConfiguration(client));
         refDatabase = new DynamoRefDatabase(this);
     }
 
-    public String getRepositoryPath() {
+    public String getRepositoryName() {
         return getDescription().getRepositoryName();
     }
 
@@ -96,6 +85,19 @@ public class AmazonRepository extends DfsRepository {
     @Override
     public void scanForRepoChanges() throws IOException {
 
+    }
+
+    public static class Builder
+            extends DfsRepositoryBuilder {
+        @Override
+        public Builder setup() throws IllegalArgumentException, IOException {
+            return this;
+        }
+
+        @Override
+        public AmazonRepository build() throws IOException {
+            return new AmazonRepository(setup());
+        }
     }
 
 }
