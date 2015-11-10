@@ -46,41 +46,86 @@
  */
 package org.chodavarapu.jgitaws.jgit;
 
-import org.chodavarapu.jgitaws.repositories.ConfigurationRepository;
-import org.eclipse.jgit.errors.ConfigInvalidException;
-import org.eclipse.jgit.lib.StoredConfig;
+import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.S3Object;
+import org.chodavarapu.jgitaws.JGitAwsConfiguration;
+import org.eclipse.jgit.internal.storage.dfs.ReadableChannel;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
 
 /**
  * @author Ravi Chodavarapu (rchodava@gmail.com)
  */
-public class DynamoStoredConfig extends StoredConfig {
-    private static final int MAX_ITEM_SIZE = 399 * 1024;
+public class S3ObjectReadableChannel implements ReadableChannel {
+    private final String objectName;
+    private JGitAwsConfiguration configuration;
+    private boolean open;
+    private long position;
+    private int readAhead;
+    private long size;
 
-    private final ConfigurationRepository configurationRepository;
-    private final String repositoryName;
-
-    public DynamoStoredConfig(ConfigurationRepository configurationRepository, String repositoryName) {
-        this.configurationRepository = configurationRepository;
-        this.repositoryName = repositoryName;
+    public S3ObjectReadableChannel(JGitAwsConfiguration configuration, String objectName) {
+        this.configuration = configuration;
+        this.objectName = objectName;
+        this.open = true;
+        this.position = 0;
+        this.readAhead = 0;
+        this.size = -1;
     }
 
     @Override
-    public void load() throws IOException, ConfigInvalidException {
-        String configuration = configurationRepository.getConfiguration(repositoryName)
-                .toBlocking().last();
-        fromText(configuration);
+    public int blockSize() {
+        return configuration.getStreamingBlockSize();
     }
 
     @Override
-    public void save() throws IOException {
-        String configuration = toText();
-        if (configuration.length() > MAX_ITEM_SIZE) {
-            throw new IOException(new IllegalArgumentException("Configuration is too large!"));
+    public void close() throws IOException {
+        open = false;
+    }
+
+    @Override
+    public boolean isOpen() {
+        return open;
+    }
+
+    @Override
+    public long position() throws IOException {
+        return position;
+    }
+
+    @Override
+    public void position(long newPosition) throws IOException {
+        this.position = newPosition;
+    }
+
+    @Override
+    public int read(ByteBuffer dst) throws IOException {
+        S3Object object = configuration.getS3Client().getObject(
+                new GetObjectRequest(configuration.getPacksBucketName(), objectName)
+                        .withRange(position, position + dst.remaining() + readAhead));
+
+        try (InputStream inputStream = object.getObjectContent()) {
+            size = object.getObjectMetadata().getInstanceLength();
+
+            int readLength = dst.remaining() + readAhead;
+            byte[] buffer = new byte[readLength];
+
+            inputStream.read(buffer);
+            dst.put(buffer, 0, readLength);
+
+            return readLength;
         }
+    }
 
-        configurationRepository.updateConfiguration(repositoryName, configuration)
-                .toBlocking().last();
+    @Override
+    public void setReadAheadBytes(int bufferSize) throws IOException {
+        this.readAhead = bufferSize;
+    }
+
+    @Override
+    public long size() throws IOException {
+        return size;
     }
 }

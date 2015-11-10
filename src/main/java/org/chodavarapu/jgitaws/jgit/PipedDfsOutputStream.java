@@ -46,76 +46,86 @@
  */
 package org.chodavarapu.jgitaws.jgit;
 
-import org.chodavarapu.jgitaws.repositories.RefRepository;
-import org.eclipse.jgit.internal.storage.dfs.DfsRefDatabase;
-import org.eclipse.jgit.lib.ObjectId;
-import org.eclipse.jgit.lib.Ref;
-import org.eclipse.jgit.revwalk.RevWalk;
-import org.eclipse.jgit.util.RefList;
+import org.eclipse.jgit.internal.storage.dfs.DfsOutputStream;
 
 import java.io.IOException;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
+import java.nio.ByteBuffer;
 
 /**
  * @author Ravi Chodavarapu (rchodava@gmail.com)
  */
-public class DynamoRefDatabase extends DfsRefDatabase {
-    private RefRepository refRepository;
+public class PipedDfsOutputStream extends DfsOutputStream {
+    private final PipedOutputStream out;
 
-    public DynamoRefDatabase(AmazonRepository repository) {
-        super(repository);
+    // TODO: Doing this with a second buffer is not a good approach. Come up with better one.
+    private final byte[] readBackSupportBuffer;
+
+    private int readBackBufferPosition;
+    private int blockSize;
+
+    public PipedDfsOutputStream(PipedInputStream pipedInputStream, int totalLength, int blockSize) throws IOException {
+        this.out = new PipedOutputStream(pipedInputStream);
+        this.readBackSupportBuffer = new byte[totalLength];
+        this.readBackBufferPosition = 0;
+        this.blockSize = blockSize;
     }
 
     @Override
-    protected boolean compareAndPut(Ref oldRef, Ref newRef) throws IOException {
-        ObjectId id = newRef.getObjectId();
+    public int blockSize() {
+        return blockSize;
+    }
 
-        // TODO: Is the below RevWalk really necessary? Copying what's done in the InMemoryRepository
-        if (id != null) {
-            try (RevWalk rw = new RevWalk(getRepository())) {
-                rw.parseAny(id);
-            }
+    @Override
+    public void write(int b) throws IOException {
+        out.write(b);
+
+        synchronized (readBackSupportBuffer) {
+            readBackSupportBuffer[readBackBufferPosition] = (byte) b;
+            readBackBufferPosition++;
+        }
+    }
+
+    @Override
+    public void write(byte[] b) throws IOException {
+        out.write(b);
+
+        synchronized (readBackSupportBuffer) {
+            System.arraycopy(b, 0, readBackSupportBuffer, readBackBufferPosition, b.length);
+            readBackBufferPosition += b.length;
+        }
+    }
+
+    @Override
+    public void write(byte[] buf, int off, int len) throws IOException {
+        out.write(buf, off, len);
+
+        synchronized (readBackSupportBuffer) {
+            System.arraycopy(buf, off, readBackSupportBuffer, readBackBufferPosition, len);
+            readBackBufferPosition += len;
+        }
+    }
+
+    @Override
+    public int read(long position, ByteBuffer buf) throws IOException {
+        int numberOfBytesToRead = buf.remaining();
+
+        synchronized (readBackSupportBuffer) {
+            numberOfBytesToRead = (int) Math.min(numberOfBytesToRead, readBackBufferPosition - position);
+            buf.put(readBackSupportBuffer, (int) position, numberOfBytesToRead);
         }
 
-        String name = newRef.getName();
-
-        if (oldRef == null) {
-            refRepository.addRefIfAbsent(
-                    getRepository().getRepositoryName(),
-                    newRef);
-            return true;
-        }
-
-        return false;
+        return numberOfBytesToRead;
     }
 
     @Override
-    protected boolean compareAndRemove(Ref oldRef) throws IOException {
-        return false;
+    public void flush() throws IOException {
+        out.flush();
     }
 
     @Override
-    protected AmazonRepository getRepository() {
-        return (AmazonRepository) super.getRepository();
-    }
-
-    @Override
-    protected RefCache scanAllRefs() throws IOException {
-        return refRepository.getAllRefsSorted(getRepository().getRepositoryName())
-                .toList()
-                .map(refs -> {
-                    RefList.Builder<Ref> allRefs = new RefList.Builder<>();
-                    RefList.Builder<Ref> onlySymbolicRefs = new RefList.Builder<>();
-
-                    for (Ref ref : refs) {
-                        allRefs.add(ref);
-
-                        if (ref.isSymbolic())
-                            onlySymbolicRefs.add(ref);
-                    }
-
-                    return new RefCache(allRefs.toRefList(), onlySymbolicRefs.toRefList());
-                })
-                .toBlocking()
-                .lastOrDefault(new RefCache(RefList.emptyList(), RefList.emptyList()));
+    public void close() throws IOException {
+        out.close();
     }
 }
