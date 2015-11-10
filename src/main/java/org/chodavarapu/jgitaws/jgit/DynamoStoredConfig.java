@@ -1,4 +1,4 @@
-package org.chodavarapu.jgitaws.git;
+package org.chodavarapu.jgitaws.jgit;
 
 import org.chodavarapu.jgitaws.repositories.ConfigurationRepository;
 import org.eclipse.jgit.errors.ConfigInvalidException;

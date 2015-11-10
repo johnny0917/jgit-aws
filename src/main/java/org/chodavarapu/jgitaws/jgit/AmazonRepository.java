@@ -1,4 +1,4 @@
-package org.chodavarapu.jgitaws.git;
+package org.chodavarapu.jgitaws.jgit;
 
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 import org.chodavarapu.jgitaws.JGitAwsConfiguration;

@@ -7,7 +7,7 @@ import com.amazonaws.services.dynamodbv2.document.TableWriteItems;
 import com.amazonaws.services.dynamodbv2.document.spec.QuerySpec;
 import com.amazonaws.services.dynamodbv2.model.*;
 import org.chodavarapu.jgitaws.JGitAwsConfiguration;
-import org.chodavarapu.jgitaws.git.AmazonRepository;
+import org.chodavarapu.jgitaws.jgit.AmazonRepository;
 import org.eclipse.jgit.internal.storage.dfs.DfsObjDatabase;
 import org.eclipse.jgit.internal.storage.dfs.DfsPackDescription;
 import org.eclipse.jgit.internal.storage.pack.PackExt;

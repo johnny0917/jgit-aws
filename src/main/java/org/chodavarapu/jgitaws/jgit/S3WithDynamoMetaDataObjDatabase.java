@@ -1,4 +1,4 @@
-package org.chodavarapu.jgitaws.git;
+package org.chodavarapu.jgitaws.jgit;
 
 import org.chodavarapu.jgitaws.JGitAwsConfiguration;
 import org.eclipse.jgit.internal.storage.dfs.*;
