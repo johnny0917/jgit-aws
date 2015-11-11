@@ -86,7 +86,7 @@ public class AmazonRepository extends DfsRepository {
     public void create(boolean bare) throws IOException {
         if (exists())
             throw new IOException(MessageFormat.format(
-                    JGitText.get().repositoryAlreadyExists, "")); //$NON-NLS-1$
+                    JGitText.get().repositoryAlreadyExists, ""));
 
         String master = Constants.R_HEADS + Constants.MASTER;
         RefUpdate.Result result = updateRef(Constants.HEAD, true).link(master);
@@ -95,7 +95,6 @@ public class AmazonRepository extends DfsRepository {
     }
 
     public boolean exists() throws IOException {
-//        return getRefDatabase().exists();
         return true;
     }
 
@@ -119,18 +118,8 @@ public class AmazonRepository extends DfsRepository {
         throw new UnsupportedOperationException();
     }
 
-    @Override
-    public void notifyIndexChanged() {
-
-    }
-
-    @Override
-    public void scanForRepoChanges() throws IOException {
-
-    }
-
     public static class Builder
-            extends DfsRepositoryBuilder {
+            extends DfsRepositoryBuilder<Builder, AmazonRepository> {
         private JGitAwsConfiguration configuration;
 
         public JGitAwsConfiguration getConfiguration() {
@@ -152,5 +141,4 @@ public class AmazonRepository extends DfsRepository {
             return new AmazonRepository(setup());
         }
     }
-
 }

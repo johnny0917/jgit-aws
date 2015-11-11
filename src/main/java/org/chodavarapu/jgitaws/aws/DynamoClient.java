@@ -94,7 +94,14 @@ public class DynamoClient {
                 return null;
             }
         }, Schedulers.io())
-                .flatMap(itemCollection -> Observable.from(itemCollection));
+                .flatMap(itemCollection -> Observable.from(itemCollection))
+                .onErrorResumeNext(t -> {
+                    if (t instanceof ResourceNotFoundException) {
+                        return Observable.empty();
+                    } else {
+                        return Observable.error(t);
+                    }
+                });
     }
 
     private <T> Observable<Void> update(Supplier<T> updater, Supplier<CreateTableRequest> tableCreator) {

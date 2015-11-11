@@ -47,6 +47,7 @@
 package org.chodavarapu.jgitaws;
 
 import com.amazonaws.RequestClientOptions;
+import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 import com.amazonaws.services.s3.AmazonS3;
 import org.chodavarapu.jgitaws.aws.DynamoClient;
 import org.chodavarapu.jgitaws.repositories.ConfigurationRepository;
@@ -85,6 +86,10 @@ public class JGitAwsConfiguration {
         this.packRepository = new PackRepository(this);
         this.packDescriptionRepository = new PackDescriptionRepository(this);
         this.refRepository = new RefRepository(this);
+    }
+
+    public JGitAwsConfiguration(AmazonDynamoDB dynamoClient, AmazonS3 s3Client) {
+        this(new DynamoClient(dynamoClient), s3Client);
     }
 
     public int getStreamingBlockSize() {
