@@ -176,8 +176,7 @@ public class PackDescriptionRepository {
                 .window(MAXIMUM_OPERATIONS_PER_BATCH)
                 .flatMap(portions -> portions.toList())
                 .map(portion -> createBatchRequest(portion))
-                .flatMap(request -> configuration.getDynamoClient().updateItems(request, tableCreator))
-                .doOnCompleted(() -> logger.debug("Commit of packs to S3 complete!"));
+                .flatMap(request -> configuration.getDynamoClient().updateItems(request, tableCreator));
     }
 
     private TableWriteItems createBatchRequest(List<PackDescriptionOperation> operations) {

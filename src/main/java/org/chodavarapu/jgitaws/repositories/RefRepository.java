@@ -46,7 +46,6 @@
  */
 package org.chodavarapu.jgitaws.repositories;
 
-import com.amazonaws.services.dynamodbv2.document.AttributeUpdate;
 import com.amazonaws.services.dynamodbv2.document.KeyAttribute;
 import com.amazonaws.services.dynamodbv2.document.PrimaryKey;
 import com.amazonaws.services.dynamodbv2.document.spec.DeleteItemSpec;
@@ -60,6 +59,8 @@ import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectIdRef;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.SymbolicRef;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import rx.Observable;
 
 import java.util.function.Supplier;
@@ -68,12 +69,18 @@ import java.util.function.Supplier;
  * @author Ravi Chodavarapu (rchodava@gmail.com)
  */
 public class RefRepository {
+    private static final Logger logger = LoggerFactory.getLogger(RefRepository.class);
+
     private static final String IS_PEELED_ATTRIBUTE = "IsPeeled";
     private static final String IS_SYMBOLIC_ATTRIBUTE = "IsSymbolic";
     private static final String NAME_ATTRIBUTE = "Name";
     private static final String PEELED_TARGET_ATTRIBUTE = "PeeledTarget";
     private static final String REPOSITORY_NAME_ATTRIBUTE = "RepositoryName";
     private static final String TARGET_ATTRIBUTE = "Target";
+    private static final String COMPARE_AND_PUT_EXPRESSION = "SET " +
+            TARGET_ATTRIBUTE + " = :target, " +
+            IS_PEELED_ATTRIBUTE + " = :isPeeled, " +
+            IS_SYMBOLIC_ATTRIBUTE + " = :isSymbolic";
 
     private final JGitAwsConfiguration configuration;
     private final Supplier<CreateTableRequest> tableCreator;
@@ -107,36 +114,44 @@ public class RefRepository {
         boolean isPeeled = newRef.isPeeled();
         String target = newRef.isSymbolic() ? newRef.getTarget().getName() : newRef.getObjectId().name();
 
+        logger.debug("Saving ref {} -> {} in repository {}", newRef.getName(), target, repositoryName);
+
         UpdateItemSpec updateSpec = new UpdateItemSpec()
                 .withPrimaryKey(new PrimaryKey(
                         new KeyAttribute(REPOSITORY_NAME_ATTRIBUTE, repositoryName),
-                        new KeyAttribute(NAME_ATTRIBUTE, newRef.getName())))
-                .withAttributeUpdate(
-                        new AttributeUpdate(TARGET_ATTRIBUTE).put(target),
-                        new AttributeUpdate(IS_SYMBOLIC_ATTRIBUTE).put(isSymbolic),
-                        new AttributeUpdate(IS_PEELED_ATTRIBUTE).put(isPeeled));
+                        new KeyAttribute(NAME_ATTRIBUTE, newRef.getName())));
+
+        StringBuilder updateExpression = new StringBuilder(COMPARE_AND_PUT_EXPRESSION);
+        ValueMap valueMap = new ValueMap()
+                .withString(":target", target)
+                .withBoolean(":isSymbolic", isSymbolic)
+                .withBoolean(":isPeeled", isPeeled);
 
         if (isPeeled && newRef.getPeeledObjectId() != null) {
-            updateSpec = updateSpec.withAttributeUpdate(
-                    new AttributeUpdate(PEELED_TARGET_ATTRIBUTE).put(newRef.getPeeledObjectId().name()));
+            updateExpression.append(", ");
+            updateExpression.append(PEELED_TARGET_ATTRIBUTE);
+            updateExpression.append(" = :peeledTarget");
+            valueMap = valueMap.withString(":peeledTarget", newRef.getPeeledObjectId().name());
         }
 
         if (oldRef != null && oldRef.getStorage() != Ref.Storage.NEW) {
             String expected = oldRef.isSymbolic() ? oldRef.getTarget().getName() : oldRef.getObjectId().name();
             updateSpec = updateSpec.withConditionExpression("#target = :expected")
-                    .withNameMap(new NameMap()
-                            .with("#target", TARGET_ATTRIBUTE))
-                    .withValueMap(new ValueMap()
-                            .with(":expected", expected));
+                    .withNameMap(new NameMap().with("#target", TARGET_ATTRIBUTE));
+            valueMap = valueMap.withString(":expected", expected);
         }
+
+        updateSpec = updateSpec.withUpdateExpression(updateExpression.toString()).withValueMap(valueMap);
 
         return configuration.getDynamoClient().updateItem(configuration.getRefsTableName(), updateSpec, tableCreator)
                 .map(v -> true)
+                .doOnNext(v -> logger.debug("Saved ref {} in repository {}", newRef.getName(), repositoryName))
                 .onErrorReturn(t -> false);
     }
 
     public Observable<Boolean> compareAndRemove(String repositoryName, Ref ref) {
         String expected = ref.isSymbolic() ? ref.getTarget().getName() : ref.getObjectId().name();
+        logger.debug("Removing ref {} -> {} from repository {}", ref.getName(), expected, repositoryName);
 
         return configuration.getDynamoClient().deleteItem(
                 configuration.getRefsTableName(),
@@ -150,6 +165,7 @@ public class RefRepository {
                         .withValueMap(new ValueMap()
                                 .with(":expected", expected)))
                 .map(v -> true)
+                .doOnNext(v -> logger.debug("Removed ref {} -> {} from repository {}", ref.getName(), expected, repositoryName))
                 .onErrorReturn(t -> false);
     }
 

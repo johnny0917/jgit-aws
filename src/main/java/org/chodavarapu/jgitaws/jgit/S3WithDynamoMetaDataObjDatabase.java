@@ -78,8 +78,11 @@ public class S3WithDynamoMetaDataObjDatabase extends DfsObjDatabase {
 
     @Override
     protected void commitPackImpl(Collection<DfsPackDescription> desc, Collection<DfsPackDescription> replaces) throws IOException {
-        logger.debug("Committing packs for repository {}", getRepository().getDescription().getRepositoryName());
-        configuration.getPackDescriptionRepository().updatePackDescriptions(desc, replaces).toBlocking().last();
+        int totalCount = (desc == null ? 0 : desc.size()) + (replaces == null ? 0 : replaces.size());
+        logger.debug("Committing {} packs for repository {}", totalCount,
+                getRepository().getDescription().getRepositoryName());
+        configuration.getPackDescriptionRepository().updatePackDescriptions(desc, replaces)
+                .doOnCompleted(() -> logger.debug("Commit of {} packs to S3 complete!", totalCount)).toBlocking().last();
     }
 
     @Override
