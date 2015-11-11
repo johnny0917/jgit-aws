@@ -86,7 +86,7 @@ public class PackDescriptionRepository {
         this.configuration = configuration;
         this.tableCreator = () ->
                 new CreateTableRequest()
-                        .withTableName(configuration.getConfigurationsTableName())
+                        .withTableName(configuration.getPackDescriptionsTableName())
                         .withKeySchema(
                                 new KeySchemaElement()
                                         .withAttributeName(REPOSITORY_NAME_ATTRIBUTE)
@@ -100,10 +100,10 @@ public class PackDescriptionRepository {
                                         .withAttributeType(ScalarAttributeType.S),
                                 new AttributeDefinition()
                                         .withAttributeName(NAME_ATTRIBUTE)
-                                        .withAttributeType(ScalarAttributeType.S),
-                                new AttributeDefinition()
-                                        .withAttributeName(DESCRIPTION_ATTRIBUTE)
-                                        .withAttributeType(ScalarAttributeType.S));
+                                        .withAttributeType(ScalarAttributeType.S))
+                        .withProvisionedThroughput(new ProvisionedThroughput(
+                                configuration.getInitialPackDescriptionsTableReadThroughput(),
+                                configuration.getInitialPackDescriptionsTableWriteThroughput()));
     }
 
     private static DfsPackDescription fromJson(String json, DfsPackDescription desc) {
@@ -117,9 +117,9 @@ public class PackDescriptionRepository {
                 .clearPackStats();
 
         for (PackExt ext : PackExt.values()) {
-            if (object.has(ext.getExtension())) {
+            if (object.has(ext.getExtension() + "Size")) {
                 desc.addFileExt(ext);
-                desc.setFileSize(ext, object.getLong(ext.getExtension()));
+                desc.setFileSize(ext, object.getLong(ext.getExtension() + "Size"));
             }
         }
 
@@ -128,7 +128,6 @@ public class PackDescriptionRepository {
 
     private static String toJson(DfsPackDescription desc) {
         JSONObject json = new JSONObject()
-                .put("source", desc.getPackSource().name())
                 .put("modified", desc.getLastModified())
                 .put("objects", desc.getObjectCount())
                 .put("deltas", desc.getDeltaCount())
@@ -138,6 +137,10 @@ public class PackDescriptionRepository {
             if (desc.hasFileExt(ext)) {
                 json.put(ext.getExtension() + "Size", desc.getFileSize(ext));
             }
+        }
+
+        if (desc.getPackSource() != null) {
+            json.put("source", desc.getPackSource().name());
         }
 
         return json.toString();

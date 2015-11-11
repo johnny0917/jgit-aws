@@ -89,9 +89,9 @@ public class ConfigurationRepository {
                         .withAttributeDefinitions(
                                 new AttributeDefinition()
                                         .withAttributeName(REPOSITORY_NAME_ATTRIBUTE)
-                                        .withAttributeType(ScalarAttributeType.S),
-                                new AttributeDefinition()
-                                        .withAttributeName(TEXT_ATTRIBUTE)
-                                        .withAttributeType(ScalarAttributeType.S)));
+                                        .withAttributeType(ScalarAttributeType.S))
+                        .withProvisionedThroughput(new ProvisionedThroughput(
+                                configuration.getInitialConfigurationsTableReadThroughput(),
+                                configuration.getInitialConfigurationsTableWriteThroughput())));
     }
 }

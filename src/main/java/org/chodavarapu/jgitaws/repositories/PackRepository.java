@@ -55,6 +55,8 @@ import org.eclipse.jgit.internal.storage.dfs.DfsOutputStream;
 import org.eclipse.jgit.internal.storage.dfs.DfsPackDescription;
 import org.eclipse.jgit.internal.storage.dfs.ReadableChannel;
 import org.eclipse.jgit.internal.storage.pack.PackExt;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import rx.Observable;
 import rx.schedulers.Schedulers;
 import rx.util.async.Async;
@@ -69,6 +71,7 @@ import java.util.List;
  * @author Ravi Chodavarapu (rchodava@gmail.com)
  */
 public class PackRepository {
+    private static final Logger logger = LoggerFactory.getLogger(PackRepository.class);
     private final JGitAwsConfiguration configuration;
 
     public PackRepository(JGitAwsConfiguration configuration) {
@@ -109,27 +112,27 @@ public class PackRepository {
 
     public DfsOutputStream savePack(String repositoryName, String packName, long length) throws IOException {
         PipedInputStream pipedInputStream = new PipedInputStream(configuration.getStreamingBlockSize());
-        PipedDfsOutputStream pipedOutputStream = new PipedDfsOutputStream(
-                pipedInputStream,
-                (int) length,
-                configuration.getStreamingBlockSize());
 
         ObjectMetadata metaData = new ObjectMetadata();
         metaData.setContentLength(length);
 
+        String objectName = objectName(repositoryName, packName);
+
         Async.fromAction(() -> {
-            String objectName = objectName(repositoryName, packName);
+            logger.debug("Attempting to save pack {} to S3 bucket", objectName);
             try {
                 configuration.getS3Client().putObject(
                         configuration.getPacksBucketName(), objectName, pipedInputStream, metaData);
             } catch (AmazonServiceException e) {
                 if ("InvalidBucketName".equals(e.getErrorCode()) || "InvalidBucketState".equals(e.getErrorCode())) {
+                    logger.debug("S3 packs bucket does not exist yet, creating it");
                     configuration.getS3Client().createBucket(new CreateBucketRequest(configuration.getPacksBucketName()));
                     configuration.getS3Client().setBucketVersioningConfiguration(
                             new SetBucketVersioningConfigurationRequest(
                                     configuration.getPacksBucketName(),
                                     new BucketVersioningConfiguration(BucketVersioningConfiguration.OFF)));
 
+                    logger.debug("Created bucket, saving pack {}", objectName);
                     configuration.getS3Client().putObject(
                             configuration.getPacksBucketName(), objectName, pipedInputStream, metaData);
                 } else {
@@ -138,6 +141,10 @@ public class PackRepository {
             }
         }, null, Schedulers.io());
 
-        return pipedOutputStream;
+        return new PipedDfsOutputStream(
+                pipedInputStream,
+                objectName,
+                (int) length,
+                configuration.getStreamingBlockSize());
     }
 }

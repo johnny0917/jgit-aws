@@ -48,10 +48,7 @@ package org.chodavarapu.jgitaws.jgit;
 
 import org.chodavarapu.jgitaws.JGitAwsConfiguration;
 import org.eclipse.jgit.internal.JGitText;
-import org.eclipse.jgit.internal.storage.dfs.DfsObjDatabase;
-import org.eclipse.jgit.internal.storage.dfs.DfsRefDatabase;
-import org.eclipse.jgit.internal.storage.dfs.DfsRepository;
-import org.eclipse.jgit.internal.storage.dfs.DfsRepositoryBuilder;
+import org.eclipse.jgit.internal.storage.dfs.*;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.RefUpdate;
 import org.eclipse.jgit.lib.ReflogReader;
@@ -133,6 +130,10 @@ public class AmazonRepository extends DfsRepository {
 
         @Override
         public Builder setup() throws IllegalArgumentException, IOException {
+            if (getReaderOptions() == null)
+                setReaderOptions(new DfsReaderOptions());
+            if (getRepositoryDescription() == null)
+                setRepositoryDescription(new DfsRepositoryDescription());
             return this;
         }
 

@@ -87,6 +87,8 @@ public class S3WithDynamoMetaDataObjDatabase extends DfsObjDatabase {
         logger.debug("Retrieving list of packs for repository {}", getRepository().getDescription().getRepositoryName());
         return configuration.getPackDescriptionRepository().getAllPackDescriptions((AmazonRepository) getRepository())
                 .toList()
+                .doOnNext(l -> logger.debug("Retrieved {} packs for repository {}",
+                        l == null ? 0 : l.size(), getRepository().getDescription().getRepositoryName()))
                 .toBlocking()
                 .lastOrDefault(Collections.emptyList());
     }
@@ -118,9 +120,23 @@ public class S3WithDynamoMetaDataObjDatabase extends DfsObjDatabase {
     }
 
     @Override
-    protected void rollbackPack(Collection<DfsPackDescription> desc) {
+    protected void rollbackPack(Collection<DfsPackDescription> descriptions) {
+        if (logger.isDebugEnabled()) {
+            if (descriptions != null) {
+                for (DfsPackDescription desc : descriptions) {
+                    StringBuilder files = new StringBuilder();
+                    for (PackExt ext : PackExt.values()) {
+                        if (desc.hasFileExt(ext)) {
+                            files.append(desc.getFileName(ext));
+                            files.append(", ");
+                        }
+                    }
+                    logger.debug("Rolling back commit of pack files {}due to error", files.toString());
+                }
+            }
+        }
         try {
-            configuration.getPackRepository().deletePacks(desc).toBlocking().last();
+            configuration.getPackRepository().deletePacks(descriptions).toBlocking().last();
         } catch (Exception e) {
             logger.debug("Error occurred while trying to rollback a pack commit operation!", e);
         }

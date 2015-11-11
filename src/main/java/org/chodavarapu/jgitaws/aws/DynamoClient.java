@@ -56,6 +56,7 @@ import com.amazonaws.services.dynamodbv2.document.spec.QuerySpec;
 import com.amazonaws.services.dynamodbv2.document.spec.UpdateItemSpec;
 import com.amazonaws.services.dynamodbv2.model.CreateTableRequest;
 import com.amazonaws.services.dynamodbv2.model.ResourceNotFoundException;
+import com.amazonaws.services.dynamodbv2.util.TableUtils;
 import rx.Observable;
 import rx.schedulers.Schedulers;
 import rx.util.async.Async;
@@ -66,13 +67,11 @@ import java.util.function.Supplier;
  * @author Ravi Chodavarapu (rchodava@gmail.com)
  */
 public class DynamoClient {
+    private final AmazonDynamoDB dynamoClient;
     private final DynamoDB dynamoDb;
 
-    public DynamoClient(DynamoDB dynamoDb) {
-        this.dynamoDb = dynamoDb;
-    }
-
     public DynamoClient(AmazonDynamoDB dynamoClient) {
+        this.dynamoClient = dynamoClient;
         this.dynamoDb = new DynamoDB(dynamoClient);
     }
 
@@ -110,6 +109,7 @@ public class DynamoClient {
                 return updater.get();
             } catch (ResourceNotFoundException e) {
                 dynamoDb.createTable(tableCreator.get());
+                TableUtils.waitUntilActive(dynamoClient, tableCreator.get().getTableName());
                 return updater.get();
             }
         }, Schedulers.io())

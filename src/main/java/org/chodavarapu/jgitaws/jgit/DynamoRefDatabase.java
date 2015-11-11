@@ -50,6 +50,8 @@ import org.chodavarapu.jgitaws.JGitAwsConfiguration;
 import org.eclipse.jgit.internal.storage.dfs.DfsRefDatabase;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.util.RefList;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 
@@ -57,6 +59,7 @@ import java.io.IOException;
  * @author Ravi Chodavarapu (rchodava@gmail.com)
  */
 public class DynamoRefDatabase extends DfsRefDatabase {
+    private static final Logger logger = LoggerFactory.getLogger(DynamoRefDatabase.class);
     private final JGitAwsConfiguration configuration;
 
     public DynamoRefDatabase(AmazonRepository repository, JGitAwsConfiguration configuration) {
@@ -86,7 +89,9 @@ public class DynamoRefDatabase extends DfsRefDatabase {
 
     @Override
     protected RefCache scanAllRefs() throws IOException {
-        return configuration.getRefRepository().getAllRefsSorted(getRepository().getRepositoryName())
+        logger.debug("Retrieving refs for repository {}", getRepository().getRepositoryName());
+
+        RefCache cache = configuration.getRefRepository().getAllRefsSorted(getRepository().getRepositoryName())
                 .toList()
                 .map(refs -> {
                     RefList.Builder<Ref> allRefs = new RefList.Builder<>();
@@ -103,5 +108,8 @@ public class DynamoRefDatabase extends DfsRefDatabase {
                 })
                 .toBlocking()
                 .lastOrDefault(new RefCache(RefList.emptyList(), RefList.emptyList()));
+
+        logger.debug("Retrieved {} refs for repository {}", cache.size(), getRepository().getRepositoryName());
+        return cache;
     }
 }

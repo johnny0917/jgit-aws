@@ -47,7 +47,10 @@
 package org.chodavarapu.jgitaws.jgit;
 
 import org.eclipse.jgit.internal.storage.dfs.DfsOutputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
@@ -57,18 +60,19 @@ import java.nio.ByteBuffer;
  * @author Ravi Chodavarapu (rchodava@gmail.com)
  */
 public class PipedDfsOutputStream extends DfsOutputStream {
+    private static final Logger logger = LoggerFactory.getLogger(PipedDfsOutputStream.class);
     private final PipedOutputStream out;
 
     // TODO: Doing this with a second buffer is not a good approach. Come up with better one.
-    private final byte[] readBackSupportBuffer;
+    private final GrowingByteBuffer readBackSupportBuffer;
 
-    private int readBackBufferPosition;
-    private int blockSize;
+    private final String objectName;
+    private final int blockSize;
 
-    public PipedDfsOutputStream(PipedInputStream pipedInputStream, int totalLength, int blockSize) throws IOException {
+    public PipedDfsOutputStream(PipedInputStream pipedInputStream, String objectName, int totalLength, int blockSize) throws IOException {
         this.out = new PipedOutputStream(pipedInputStream);
-        this.readBackSupportBuffer = new byte[totalLength];
-        this.readBackBufferPosition = 0;
+        this.objectName = objectName;
+        this.readBackSupportBuffer = new GrowingByteBuffer(totalLength < 1 ? blockSize * 4 : totalLength);
         this.blockSize = blockSize;
     }
 
@@ -82,8 +86,7 @@ public class PipedDfsOutputStream extends DfsOutputStream {
         out.write(b);
 
         synchronized (readBackSupportBuffer) {
-            readBackSupportBuffer[readBackBufferPosition] = (byte) b;
-            readBackBufferPosition++;
+            readBackSupportBuffer.write(b);
         }
     }
 
@@ -92,8 +95,7 @@ public class PipedDfsOutputStream extends DfsOutputStream {
         out.write(b);
 
         synchronized (readBackSupportBuffer) {
-            System.arraycopy(b, 0, readBackSupportBuffer, readBackBufferPosition, b.length);
-            readBackBufferPosition += b.length;
+            readBackSupportBuffer.write(b);
         }
     }
 
@@ -102,21 +104,15 @@ public class PipedDfsOutputStream extends DfsOutputStream {
         out.write(buf, off, len);
 
         synchronized (readBackSupportBuffer) {
-            System.arraycopy(buf, off, readBackSupportBuffer, readBackBufferPosition, len);
-            readBackBufferPosition += len;
+            readBackSupportBuffer.write(buf, off, len);
         }
     }
 
     @Override
     public int read(long position, ByteBuffer buf) throws IOException {
-        int numberOfBytesToRead = buf.remaining();
-
         synchronized (readBackSupportBuffer) {
-            numberOfBytesToRead = (int) Math.min(numberOfBytesToRead, readBackBufferPosition - position);
-            buf.put(readBackSupportBuffer, (int) position, numberOfBytesToRead);
+            return readBackSupportBuffer.read(position, buf);
         }
-
-        return numberOfBytesToRead;
     }
 
     @Override
@@ -126,6 +122,22 @@ public class PipedDfsOutputStream extends DfsOutputStream {
 
     @Override
     public void close() throws IOException {
+        logger.debug("Finished writing file {} to S3 bucket", objectName);
         out.close();
+    }
+
+    private static class GrowingByteBuffer extends ByteArrayOutputStream {
+        public GrowingByteBuffer(int initialCapacity) {
+            super(initialCapacity);
+        }
+
+        public int read(long position, ByteBuffer dest) {
+            int numberOfBytesToRead = dest.remaining();
+
+            numberOfBytesToRead = (int) Math.min(numberOfBytesToRead, count - position);
+            dest.put(buf, (int) position, numberOfBytesToRead);
+
+            return numberOfBytesToRead;
+        }
     }
 }

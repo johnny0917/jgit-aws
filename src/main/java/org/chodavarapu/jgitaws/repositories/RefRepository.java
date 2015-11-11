@@ -96,19 +96,10 @@ public class RefRepository {
                                         .withAttributeType(ScalarAttributeType.S),
                                 new AttributeDefinition()
                                         .withAttributeName(NAME_ATTRIBUTE)
-                                        .withAttributeType(ScalarAttributeType.S),
-                                new AttributeDefinition()
-                                        .withAttributeName(TARGET_ATTRIBUTE)
-                                        .withAttributeType(ScalarAttributeType.S),
-                                new AttributeDefinition()
-                                        .withAttributeName(IS_SYMBOLIC_ATTRIBUTE)
-                                        .withAttributeType(ScalarAttributeType.B),
-                                new AttributeDefinition()
-                                        .withAttributeName(IS_PEELED_ATTRIBUTE)
-                                        .withAttributeType(ScalarAttributeType.B),
-                                new AttributeDefinition()
-                                        .withAttributeName(PEELED_TARGET_ATTRIBUTE)
-                                        .withAttributeType(ScalarAttributeType.S));
+                                        .withAttributeType(ScalarAttributeType.S))
+                        .withProvisionedThroughput(new ProvisionedThroughput(
+                                configuration.getInitialRefsTableReadThroughput(),
+                                configuration.getInitialRefsTableWriteThroughput()));
     }
 
     public Observable<Boolean> compareAndPut(String repositoryName, Ref oldRef, Ref newRef) {
@@ -125,12 +116,12 @@ public class RefRepository {
                         new AttributeUpdate(IS_SYMBOLIC_ATTRIBUTE).put(isSymbolic),
                         new AttributeUpdate(IS_PEELED_ATTRIBUTE).put(isPeeled));
 
-        if (isPeeled) {
+        if (isPeeled && newRef.getPeeledObjectId() != null) {
             updateSpec = updateSpec.withAttributeUpdate(
                     new AttributeUpdate(PEELED_TARGET_ATTRIBUTE).put(newRef.getPeeledObjectId().name()));
         }
 
-        if (oldRef == null || oldRef.getStorage() == Ref.Storage.NEW) {
+        if (oldRef != null && oldRef.getStorage() != Ref.Storage.NEW) {
             String expected = oldRef.isSymbolic() ? oldRef.getTarget().getName() : oldRef.getObjectId().name();
             updateSpec = updateSpec.withConditionExpression("#target = :expected")
                     .withNameMap(new NameMap()
@@ -179,11 +170,15 @@ public class RefRepository {
                         return new SymbolicRef(name, new ObjectIdRef.Unpeeled(Ref.Storage.PACKED, target, null));
                     } else {
                         if (isPeeled) {
-                            return new ObjectIdRef.PeeledTag(
-                                    Ref.Storage.PACKED,
-                                    name,
-                                    ObjectId.fromString(target),
-                                    ObjectId.fromString(peeledTarget));
+                            if (peeledTarget == null) {
+                                return new ObjectIdRef.PeeledNonTag(Ref.Storage.PACKED, name, ObjectId.fromString(target));
+                            } else {
+                                return new ObjectIdRef.PeeledTag(
+                                        Ref.Storage.PACKED,
+                                        name,
+                                        ObjectId.fromString(target),
+                                        ObjectId.fromString(peeledTarget));
+                            }
                         } else {
                             return new ObjectIdRef.Unpeeled(Ref.Storage.PACKED, name, ObjectId.fromString(target));
                         }

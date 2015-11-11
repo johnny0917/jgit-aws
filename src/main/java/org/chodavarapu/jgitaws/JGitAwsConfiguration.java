@@ -64,6 +64,12 @@ public class JGitAwsConfiguration {
     public static final String DEFAULT_REFS_TABLE_NAME = "jga.Refs";
     public static final String DEFAULT_PACK_DESCRIPTIONS_TABLE_NAME = "jga.PackDescriptions";
     public static final String DEFAULT_PACKS_BUCKET_NAME = "jga.Packs";
+    public static final long DEFAULT_CONFIGURATIONS_TABLE_READ_THROUGHPUT = 1;
+    public static final long DEFAULT_CONFIGURATIONS_TABLE_WRITE_THROUGHPUT = 1;
+    public static final long DEFAULT_REFS_TABLE_READ_THROUGHPUT = 1;
+    public static final long DEFAULT_REFS_TABLE_WRITE_THROUGHPUT = 1;
+    public static final long DEFAULT_PACK_DESCRIPTIONS_TABLE_READ_THROUGHPUT = 1;
+    public static final long DEFAULT_PACK_DESCRIPTIONS_TABLE_WRITE_THROUGHPUT = 1;
 
     private final DynamoClient dynamoClient;
     private final AmazonS3 s3Client;
@@ -77,6 +83,12 @@ public class JGitAwsConfiguration {
     private String packsBucketName = DEFAULT_PACKS_BUCKET_NAME;
     private String refsTableName = DEFAULT_REFS_TABLE_NAME;
     private int streamingBlockSize = DEFAULT_STREAMING_BLOCK_SIZE;
+    private long initialConfigurationsTableReadThroughput = DEFAULT_CONFIGURATIONS_TABLE_READ_THROUGHPUT;
+    private long initialConfigurationsTableWriteThroughput = DEFAULT_CONFIGURATIONS_TABLE_WRITE_THROUGHPUT;
+    private long initialRefsTableReadThroughput = DEFAULT_REFS_TABLE_READ_THROUGHPUT;
+    private long initialRefsTableWriteThroughput = DEFAULT_REFS_TABLE_WRITE_THROUGHPUT;
+    private long initialPackDescriptionsTableReadThroughput = DEFAULT_PACK_DESCRIPTIONS_TABLE_READ_THROUGHPUT;
+    private long initialPackDescriptionsTableWriteThroughput = DEFAULT_PACK_DESCRIPTIONS_TABLE_WRITE_THROUGHPUT;
 
     public JGitAwsConfiguration(DynamoClient dynamoClient, AmazonS3 s3Client) {
         this.dynamoClient = dynamoClient;
@@ -90,6 +102,54 @@ public class JGitAwsConfiguration {
 
     public JGitAwsConfiguration(AmazonDynamoDB dynamoClient, AmazonS3 s3Client) {
         this(new DynamoClient(dynamoClient), s3Client);
+    }
+
+    public long getInitialConfigurationsTableReadThroughput() {
+        return initialConfigurationsTableReadThroughput;
+    }
+
+    public void setInitialConfigurationsTableReadThroughput(long initialConfigurationsTableReadThroughput) {
+        this.initialConfigurationsTableReadThroughput = initialConfigurationsTableReadThroughput;
+    }
+
+    public long getInitialConfigurationsTableWriteThroughput() {
+        return initialConfigurationsTableWriteThroughput;
+    }
+
+    public void setInitialConfigurationsTableWriteThroughput(long initialConfigurationsTableWriteThroughput) {
+        this.initialConfigurationsTableWriteThroughput = initialConfigurationsTableWriteThroughput;
+    }
+
+    public long getInitialRefsTableWriteThroughput() {
+        return initialRefsTableWriteThroughput;
+    }
+
+    public void setInitialRefsTableWriteThroughput(long initialRefsTableWriteThroughput) {
+        this.initialRefsTableWriteThroughput = initialRefsTableWriteThroughput;
+    }
+
+    public long getInitialPackDescriptionsTableReadThroughput() {
+        return initialPackDescriptionsTableReadThroughput;
+    }
+
+    public void setInitialPackDescriptionsTableReadThroughput(long initialPackDescriptionsTableReadThroughput) {
+        this.initialPackDescriptionsTableReadThroughput = initialPackDescriptionsTableReadThroughput;
+    }
+
+    public long getInitialRefsTableReadThroughput() {
+        return initialRefsTableReadThroughput;
+    }
+
+    public void setInitialRefsTableReadThroughput(long initialRefsTableReadThroughput) {
+        this.initialRefsTableReadThroughput = initialRefsTableReadThroughput;
+    }
+
+    public long getInitialPackDescriptionsTableWriteThroughput() {
+        return initialPackDescriptionsTableWriteThroughput;
+    }
+
+    public void setInitialPackDescriptionsTableWriteThroughput(long initialPackDescriptionsTableWriteThroughput) {
+        this.initialPackDescriptionsTableWriteThroughput = initialPackDescriptionsTableWriteThroughput;
     }
 
     public int getStreamingBlockSize() {
