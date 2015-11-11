@@ -46,11 +46,9 @@
  */
 package org.chodavarapu.jgitaws.jgit;
 
-import org.chodavarapu.jgitaws.repositories.RefRepository;
+import org.chodavarapu.jgitaws.JGitAwsConfiguration;
 import org.eclipse.jgit.internal.storage.dfs.DfsRefDatabase;
-import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Ref;
-import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.util.RefList;
 
 import java.io.IOException;
@@ -59,38 +57,26 @@ import java.io.IOException;
  * @author Ravi Chodavarapu (rchodava@gmail.com)
  */
 public class DynamoRefDatabase extends DfsRefDatabase {
-    private RefRepository refRepository;
+    private final JGitAwsConfiguration configuration;
 
-    public DynamoRefDatabase(AmazonRepository repository) {
+    public DynamoRefDatabase(AmazonRepository repository, JGitAwsConfiguration configuration) {
         super(repository);
+
+        this.configuration = configuration;
     }
 
     @Override
     protected boolean compareAndPut(Ref oldRef, Ref newRef) throws IOException {
-        ObjectId id = newRef.getObjectId();
-
-        // TODO: Is the below RevWalk really necessary? Copying what's done in the InMemoryRepository
-        if (id != null) {
-            try (RevWalk rw = new RevWalk(getRepository())) {
-                rw.parseAny(id);
-            }
-        }
-
-        String name = newRef.getName();
-
-        if (oldRef == null) {
-            refRepository.addRefIfAbsent(
-                    getRepository().getRepositoryName(),
-                    newRef);
-            return true;
-        }
-
-        return false;
+        return configuration.getRefRepository().compareAndPut(getRepository().getRepositoryName(), oldRef, newRef)
+                .toBlocking()
+                .lastOrDefault(false);
     }
 
     @Override
     protected boolean compareAndRemove(Ref oldRef) throws IOException {
-        return false;
+        return configuration.getRefRepository().compareAndRemove(getRepository().getRepositoryName(), oldRef)
+                .toBlocking()
+                .lastOrDefault(false);
     }
 
     @Override
@@ -100,7 +86,7 @@ public class DynamoRefDatabase extends DfsRefDatabase {
 
     @Override
     protected RefCache scanAllRefs() throws IOException {
-        return refRepository.getAllRefsSorted(getRepository().getRepositoryName())
+        return configuration.getRefRepository().getAllRefsSorted(getRepository().getRepositoryName())
                 .toList()
                 .map(refs -> {
                     RefList.Builder<Ref> allRefs = new RefList.Builder<>();

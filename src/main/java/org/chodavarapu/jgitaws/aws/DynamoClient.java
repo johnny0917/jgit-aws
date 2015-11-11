@@ -51,6 +51,7 @@ import com.amazonaws.services.dynamodbv2.document.DynamoDB;
 import com.amazonaws.services.dynamodbv2.document.Item;
 import com.amazonaws.services.dynamodbv2.document.PrimaryKey;
 import com.amazonaws.services.dynamodbv2.document.TableWriteItems;
+import com.amazonaws.services.dynamodbv2.document.spec.DeleteItemSpec;
 import com.amazonaws.services.dynamodbv2.document.spec.QuerySpec;
 import com.amazonaws.services.dynamodbv2.document.spec.UpdateItemSpec;
 import com.amazonaws.services.dynamodbv2.model.CreateTableRequest;
@@ -103,6 +104,17 @@ public class DynamoClient {
             } catch (ResourceNotFoundException e) {
                 dynamoDb.createTable(tableCreator.get());
                 return updater.get();
+            }
+        }, Schedulers.io())
+                .map(o -> null);
+    }
+
+    public Observable<Void> deleteItem(String tableName, DeleteItemSpec deleteItemSpec) {
+        return Async.fromCallable(() -> {
+            try {
+                return dynamoDb.getTable(tableName).deleteItem(deleteItemSpec);
+            } catch (ResourceNotFoundException e) {
+                return null;
             }
         }, Schedulers.io())
                 .map(o -> null);

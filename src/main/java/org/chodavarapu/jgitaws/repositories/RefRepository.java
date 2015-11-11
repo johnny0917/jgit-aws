@@ -46,13 +46,23 @@
  */
 package org.chodavarapu.jgitaws.repositories;
 
+import com.amazonaws.services.dynamodbv2.document.AttributeUpdate;
+import com.amazonaws.services.dynamodbv2.document.KeyAttribute;
+import com.amazonaws.services.dynamodbv2.document.PrimaryKey;
+import com.amazonaws.services.dynamodbv2.document.spec.DeleteItemSpec;
 import com.amazonaws.services.dynamodbv2.document.spec.QuerySpec;
+import com.amazonaws.services.dynamodbv2.document.spec.UpdateItemSpec;
+import com.amazonaws.services.dynamodbv2.document.utils.NameMap;
+import com.amazonaws.services.dynamodbv2.document.utils.ValueMap;
+import com.amazonaws.services.dynamodbv2.model.*;
 import org.chodavarapu.jgitaws.JGitAwsConfiguration;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectIdRef;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.SymbolicRef;
 import rx.Observable;
+
+import java.util.function.Supplier;
 
 /**
  * @author Ravi Chodavarapu (rchodava@gmail.com)
@@ -61,21 +71,95 @@ public class RefRepository {
     private static final String IS_PEELED_ATTRIBUTE = "IsPeeled";
     private static final String IS_SYMBOLIC_ATTRIBUTE = "IsSymbolic";
     private static final String NAME_ATTRIBUTE = "Name";
+    private static final String PEELED_TARGET_ATTRIBUTE = "PeeledTarget";
     private static final String REPOSITORY_NAME_ATTRIBUTE = "RepositoryName";
     private static final String TARGET_ATTRIBUTE = "Target";
 
     private final JGitAwsConfiguration configuration;
+    private final Supplier<CreateTableRequest> tableCreator;
 
     public RefRepository(JGitAwsConfiguration configuration) {
         this.configuration = configuration;
+        this.tableCreator = () ->
+                new CreateTableRequest()
+                        .withTableName(configuration.getRefsTableName())
+                        .withKeySchema(
+                                new KeySchemaElement()
+                                        .withAttributeName(REPOSITORY_NAME_ATTRIBUTE)
+                                        .withKeyType(KeyType.HASH),
+                                new KeySchemaElement()
+                                        .withAttributeName(NAME_ATTRIBUTE)
+                                        .withKeyType(KeyType.RANGE))
+                        .withAttributeDefinitions(
+                                new AttributeDefinition()
+                                        .withAttributeName(REPOSITORY_NAME_ATTRIBUTE)
+                                        .withAttributeType(ScalarAttributeType.S),
+                                new AttributeDefinition()
+                                        .withAttributeName(NAME_ATTRIBUTE)
+                                        .withAttributeType(ScalarAttributeType.S),
+                                new AttributeDefinition()
+                                        .withAttributeName(TARGET_ATTRIBUTE)
+                                        .withAttributeType(ScalarAttributeType.S),
+                                new AttributeDefinition()
+                                        .withAttributeName(IS_SYMBOLIC_ATTRIBUTE)
+                                        .withAttributeType(ScalarAttributeType.B),
+                                new AttributeDefinition()
+                                        .withAttributeName(IS_PEELED_ATTRIBUTE)
+                                        .withAttributeType(ScalarAttributeType.B),
+                                new AttributeDefinition()
+                                        .withAttributeName(PEELED_TARGET_ATTRIBUTE)
+                                        .withAttributeType(ScalarAttributeType.S));
     }
 
-    public Observable<Void> addRefIfAbsent(String repositoryName, Ref ref) {
-        String name = ref.getName();
-        String target = ref.getTarget().getObjectId().name();
-        boolean isSymbolic = ref.isSymbolic();
-        boolean isPeeled = ref.isPeeled();
-        return Observable.just(null);
+    public Observable<Boolean> compareAndPut(String repositoryName, Ref oldRef, Ref newRef) {
+        boolean isSymbolic = newRef.isSymbolic();
+        boolean isPeeled = newRef.isPeeled();
+        String target = newRef.isSymbolic() ? newRef.getTarget().getName() : newRef.getObjectId().name();
+
+        UpdateItemSpec updateSpec = new UpdateItemSpec()
+                .withPrimaryKey(new PrimaryKey(
+                        new KeyAttribute(REPOSITORY_NAME_ATTRIBUTE, repositoryName),
+                        new KeyAttribute(NAME_ATTRIBUTE, newRef.getName())))
+                .withAttributeUpdate(
+                        new AttributeUpdate(TARGET_ATTRIBUTE).put(target),
+                        new AttributeUpdate(IS_SYMBOLIC_ATTRIBUTE).put(isSymbolic),
+                        new AttributeUpdate(IS_PEELED_ATTRIBUTE).put(isPeeled));
+
+        if (isPeeled) {
+            updateSpec = updateSpec.withAttributeUpdate(
+                    new AttributeUpdate(PEELED_TARGET_ATTRIBUTE).put(newRef.getPeeledObjectId().name()));
+        }
+
+        if (oldRef == null || oldRef.getStorage() == Ref.Storage.NEW) {
+            String expected = oldRef.isSymbolic() ? oldRef.getTarget().getName() : oldRef.getObjectId().name();
+            updateSpec = updateSpec.withConditionExpression("#target = :expected")
+                    .withNameMap(new NameMap()
+                            .with("#target", TARGET_ATTRIBUTE))
+                    .withValueMap(new ValueMap()
+                            .with(":expected", expected));
+        }
+
+        return configuration.getDynamoClient().updateItem(configuration.getRefsTableName(), updateSpec, tableCreator)
+                .map(v -> true)
+                .onErrorReturn(t -> false);
+    }
+
+    public Observable<Boolean> compareAndRemove(String repositoryName, Ref ref) {
+        String expected = ref.isSymbolic() ? ref.getTarget().getName() : ref.getObjectId().name();
+
+        return configuration.getDynamoClient().deleteItem(
+                configuration.getRefsTableName(),
+                new DeleteItemSpec()
+                        .withPrimaryKey(new PrimaryKey(
+                                new KeyAttribute(REPOSITORY_NAME_ATTRIBUTE, repositoryName),
+                                new KeyAttribute(NAME_ATTRIBUTE, ref.getName())))
+                        .withConditionExpression("#target = :expected")
+                        .withNameMap(new NameMap()
+                                .with("#target", TARGET_ATTRIBUTE))
+                        .withValueMap(new ValueMap()
+                                .with(":expected", expected)))
+                .map(v -> true)
+                .onErrorReturn(t -> false);
     }
 
     public Observable<Ref> getAllRefsSorted(String repositoryName) {
@@ -88,11 +172,21 @@ public class RefRepository {
                     String name = item.getString(NAME_ATTRIBUTE);
                     String target = item.getString(TARGET_ATTRIBUTE);
                     boolean isSymbolic = item.getBoolean(IS_SYMBOLIC_ATTRIBUTE);
+                    boolean isPeeled = item.getBoolean(IS_PEELED_ATTRIBUTE);
+                    String peeledTarget = item.getString(PEELED_TARGET_ATTRIBUTE);
 
                     if (isSymbolic) {
                         return new SymbolicRef(name, new ObjectIdRef.Unpeeled(Ref.Storage.PACKED, target, null));
                     } else {
-                        return new ObjectIdRef.Unpeeled(Ref.Storage.PACKED, name, ObjectId.fromString(target));
+                        if (isPeeled) {
+                            return new ObjectIdRef.PeeledTag(
+                                    Ref.Storage.PACKED,
+                                    name,
+                                    ObjectId.fromString(target),
+                                    ObjectId.fromString(peeledTarget));
+                        } else {
+                            return new ObjectIdRef.Unpeeled(Ref.Storage.PACKED, name, ObjectId.fromString(target));
+                        }
                     }
                 });
     }

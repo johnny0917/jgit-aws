@@ -46,7 +46,7 @@
  */
 package org.chodavarapu.jgitaws.jgit;
 
-import org.chodavarapu.jgitaws.repositories.ConfigurationRepository;
+import org.chodavarapu.jgitaws.JGitAwsConfiguration;
 import org.eclipse.jgit.errors.ConfigInvalidException;
 import org.eclipse.jgit.lib.StoredConfig;
 
@@ -58,29 +58,29 @@ import java.io.IOException;
 public class DynamoStoredConfig extends StoredConfig {
     private static final int MAX_ITEM_SIZE = 399 * 1024;
 
-    private final ConfigurationRepository configurationRepository;
-    private final String repositoryName;
+    private final AmazonRepository repository;
+    private final JGitAwsConfiguration configuration;
 
-    public DynamoStoredConfig(ConfigurationRepository configurationRepository, String repositoryName) {
-        this.configurationRepository = configurationRepository;
-        this.repositoryName = repositoryName;
+    public DynamoStoredConfig(AmazonRepository repository, JGitAwsConfiguration configuration) {
+        this.repository = repository;
+        this.configuration = configuration;
     }
 
     @Override
     public void load() throws IOException, ConfigInvalidException {
-        String configuration = configurationRepository.getConfiguration(repositoryName)
+        String text = configuration.getConfigurationRepository().getConfiguration(repository.getRepositoryName())
                 .toBlocking().last();
-        fromText(configuration);
+        fromText(text);
     }
 
     @Override
     public void save() throws IOException {
-        String configuration = toText();
-        if (configuration.length() > MAX_ITEM_SIZE) {
+        String text = toText();
+        if (text.length() > MAX_ITEM_SIZE) {
             throw new IOException(new IllegalArgumentException("Configuration is too large!"));
         }
 
-        configurationRepository.updateConfiguration(repositoryName, configuration)
+        configuration.getConfigurationRepository().updateConfiguration(repository.getRepositoryName(), text)
                 .toBlocking().last();
     }
 }

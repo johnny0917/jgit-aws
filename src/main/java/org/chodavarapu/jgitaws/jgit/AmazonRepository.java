@@ -46,9 +46,7 @@
  */
 package org.chodavarapu.jgitaws.jgit;
 
-import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 import org.chodavarapu.jgitaws.JGitAwsConfiguration;
-import org.chodavarapu.jgitaws.aws.DynamoClient;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.dfs.DfsObjDatabase;
 import org.eclipse.jgit.internal.storage.dfs.DfsRefDatabase;
@@ -66,20 +64,18 @@ import java.text.MessageFormat;
  * @author Ravi Chodavarapu (rchodava@gmail.com)
  */
 public class AmazonRepository extends DfsRepository {
-    private final StoredConfig config;
+    private final JGitAwsConfiguration configuration;
+    private final StoredConfig storedConfig;
     private final DfsObjDatabase objectDatabase;
     private final DfsRefDatabase refDatabase;
+
     private AmazonRepository(Builder builder) {
         super(builder);
 
-        DynamoClient client = new DynamoClient((AmazonDynamoDB) null);
-        config = new DynamoStoredConfig(null, getRepositoryName());
-        objectDatabase =
-                new S3WithDynamoMetaDataObjDatabase(
-                        this,
-                        builder.getReaderOptions(),
-                        new JGitAwsConfiguration(client, null));
-        refDatabase = new DynamoRefDatabase(this);
+        this.configuration = builder.getConfiguration();
+        this.storedConfig = new DynamoStoredConfig(this, this.configuration);
+        this.objectDatabase = new S3WithDynamoMetaDataObjDatabase(this, builder.getReaderOptions(), this.configuration);
+        this.refDatabase = new DynamoRefDatabase(this, this.configuration);
     }
 
     public String getRepositoryName() {
@@ -105,7 +101,7 @@ public class AmazonRepository extends DfsRepository {
 
     @Override
     public StoredConfig getConfig() {
-        return config;
+        return storedConfig;
     }
 
     @Override
@@ -135,6 +131,17 @@ public class AmazonRepository extends DfsRepository {
 
     public static class Builder
             extends DfsRepositoryBuilder {
+        private JGitAwsConfiguration configuration;
+
+        public JGitAwsConfiguration getConfiguration() {
+            return configuration;
+        }
+
+        public Builder setConfiguration(JGitAwsConfiguration configuration) {
+            this.configuration = configuration;
+            return this;
+        }
+
         @Override
         public Builder setup() throws IllegalArgumentException, IOException {
             return this;
