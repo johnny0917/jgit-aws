@@ -1,6 +1,8 @@
 # jgit-aws [![Build Status](https://travis-ci.org/rchodava/jgit-aws.svg?branch=master)](https://travis-ci.org/rchodava/jgit-aws)
 This is a (fairly naive) implementation of a JGit Git repository using Amazon DynamoDB and S3 as a store. It is built
-on the JGit `DfsRepository` - and it is not particularly optimized.
+on the JGit `DfsRepository` - and it is not particularly optimized. It is at a very early stage and has not been properly
+tested. Nonetheless, I am hoping this is useful for others - and a bit selfishly, I am hoping people will report back 
+issues, contributions.
 
 ## Usage
 Usage is fairly straighforward - create a new instance of the `AmazonRepository` using the `AmazonRepository.Builder`,
